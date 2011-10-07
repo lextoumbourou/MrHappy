@@ -9,10 +9,14 @@ CheckFailed = Exception('CheckFailed')
 class BPLUser(BotPlugin):
 
     config_options = {
-        'dbname': 'mydb',
-        'dbuser': 'myuser',
-        'dbpass': 'mypass',
-        'environment_example': 'server,dbip',
+        # This configurs the "example" environment. In your bot config
+        # file define as many environments as you wish, using this format.
+        # server: jump host name as defined in your .ssh/config
+        # dbaddr: address mysql client connects to from server. eg. localhost
+        # dbname: mysql database name
+        # dbuser: mysql user
+        # dbpass: mysql password
+        'environment_example': 'server,dbaddr,dbname,dbuser,dbpass',
     }
 
     def setup(self, options):
