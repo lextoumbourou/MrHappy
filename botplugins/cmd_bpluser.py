@@ -1,10 +1,12 @@
 from botplugin import BotPlugin
 from fabric.api import *
 from paramiko import SSHConfig
+from collections import namedtuple
 import logging
 import re
 
 CheckFailed = Exception('CheckFailed')
+UserAccount = namedtuple('UserAccount', 'environment username email full_name')
 
 class BPLUser(BotPlugin):
 
@@ -31,32 +33,47 @@ class BPLUser(BotPlugin):
             (subcmd, args) = args, None
         if subcmd == "exists":
             self.handle_bpluser_exists(bot, args, channel, nick)
+        if subcmd == "create":
+            self.handle_bpluser_create(bot, args, channel, nick)
+
+    def _user_account_from_args(args):
+        """
+        Attempt to create a UserAccount object by splitting args
+
+        Two or four arguments may be passed, in order:
+        environment
+        username
+        email
+        full_name (which may be multiple words)
+        """
+        try:
+            a = args.split(' ', 3)
+        except:
+            return None
+        if len(a) == 2:
+            a.extend((None, None))
+            useraccount = UserAccount(a)
+        elif len(a) == 4:
+            useraccount = UserAccount(a)
+        else:
+            return None
 
     def handle_bpluser_exists(self, bot, args, channel, nick):
         logging.debug('handling bpluser exists')
-        bad_args = False
-        try:
-            a = args.split(' ')
-            if len(a) != 2:
-                bad_args = True
-        except:
-            bad_args = True
-        if bad_args:
+        ua = _user_account_from_args(args)
+        if not ua:
             bot.reply('args: exists <environment> <username>', channel, nick)
             return
 
-        environment = a[0]
-        username = a[1]
-
-        if not re.match('^[a-zA-Z\d]+$', username):
-            bot.reply('Does not appear to be a valid username: %s' % args, channel, nick)
+        if not re.match('^[a-zA-Z\d]+$', ua.username):
+            bot.reply('Does not appear to be a valid username: %s' % ua.username, channel, nick)
             return
 
-        if not self.config.has_key('environment_%s' % environment):
-            bot.reply('Unknown environment: %s' % environment, channel, nick)
+        if not self.config.has_key('environment_%s' % ua.environment):
+            bot.reply('Unknown environment: %s' % ua.environment, channel, nick)
             return
 
-        (host, dbaddr, dbname, dbuser, dbpass) = self.config['environment_%s' % environment].split(',')
+        (host, dbaddr, dbname, dbuser, dbpass) = self.config['environment_%s' % ua.environment].split(',')
         dbname = self.config['dbname']
 
         h_info = ssh_config.lookup(host)
@@ -66,13 +83,13 @@ class BPLUser(BotPlugin):
             bot.reply('Incomplete ssh config for environment', channel, nick)
             return
 
-        exists = check_if_user_exists(h, dbaddr, dbname, dbuser, dbpass, username)
+        exists = check_if_user_exists(h, dbaddr, dbname, dbuser, dbpass, ua.username)
         if exists is None:
             bot.reply('Error while running check', channel, nick)
         elif exists:
-            bot.reply('User %s exists in %s' % (username, environment), channel, nick)
+            bot.reply('User %s exists in %s' % (ua.username, ua.environment), channel, nick)
         else:
-            bot.reply('User %s does not exist in %s' % (username, environment), channel, nick)
+            bot.reply('User %s does not exist in %s' % (ua.username, ua.environment), channel, nick)
 
 def create_sql_query_does_user_exist(dbname, username):
     sqlfile = 'does_user_exist_%s.sql' % username
