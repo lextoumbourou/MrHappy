@@ -2,6 +2,7 @@ from botplugin import BotPlugin
 from fabric.api import *
 from paramiko import SSHConfig
 from collections import namedtuple
+import string
 import logging
 import re
 
@@ -73,7 +74,7 @@ class BPLUser(BotPlugin):
             bot.reply('Unknown environment: %s' % ua.environment, channel, nick)
             return
 
-        (host, dbaddr, dbname, dbuser, dbpass) = self.config['environment_%s' % ua.environment].split(',')
+        (host, dbaddr, dbname, dbuser, dbpass) = map(string.strip, self.config['environment_%s' % ua.environment].split(','))
         dbname = self.config['dbname']
 
         h_info = ssh_config.lookup(host)
