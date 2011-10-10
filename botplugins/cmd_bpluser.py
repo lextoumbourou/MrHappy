@@ -6,8 +6,14 @@ import string
 import logging
 import re
 
-CheckFailed = Exception('CheckFailed')
+class CheckFailed(Exception):
+    pass
+
+class InvalidArgs(Exception):
+    pass
+
 UserAccount = namedtuple('UserAccount', 'environment username email full_name')
+DBConnectInfo = namedtuple('DBConnectInfo', 'host dbaddr dbname dbuser dbpass')
 
 class BPLUser(BotPlugin):
 
@@ -37,7 +43,7 @@ class BPLUser(BotPlugin):
         if subcmd == "create":
             self.handle_bpluser_create(bot, args, channel, nick)
 
-    def _user_account_from_args(args):
+    def _user_account_from_args(self, args):
         """
         Attempt to create a UserAccount object by splitting args
 
@@ -50,41 +56,66 @@ class BPLUser(BotPlugin):
         try:
             a = args.split(' ', 3)
         except:
-            return None
+            raise InvalidArgs
         if len(a) == 2:
             a.extend((None, None))
-            useraccount = UserAccount(a)
+            useraccount = UserAccount(*a)
         elif len(a) == 4:
-            useraccount = UserAccount(a)
+            useraccount = UserAccount(*a)
         else:
-            return None
+            raise InvalidArgs
+        return useraccount
 
-    def handle_bpluser_exists(self, bot, args, channel, nick):
+    def _handle_bpluser_prelim(self, bot, args, channel, nick):
         logging.debug('handling bpluser exists')
-        ua = _user_account_from_args(args)
-        if not ua:
-            bot.reply('args: exists <environment> <username>', channel, nick)
-            return
 
-        if not re.match('^[a-zA-Z\d]+$', ua.username):
-            bot.reply('Does not appear to be a valid username: %s' % ua.username, channel, nick)
+        # This call may raise InvalidArgs, which we allow to fall
+        # through to the command handler to deal with.
+        ua = self._user_account_from_args(args)
+
+        if not ua:
+            logging.warning('No UserAccount returned')
             return
 
         if not self.config.has_key('environment_%s' % ua.environment):
             bot.reply('Unknown environment: %s' % ua.environment, channel, nick)
             return
 
-        (host, dbaddr, dbname, dbuser, dbpass) = map(string.strip, self.config['environment_%s' % ua.environment].split(','))
-        dbname = self.config['dbname']
+        if not re.match('^[a-zA-Z\d]+$', ua.username):
+            bot.reply('Does not appear to be a valid username: %s' % ua.username, channel, nick)
+            return
 
-        h_info = ssh_config.lookup(host)
+        if ua.email is not None and not re.match('^[\w\d\.]+@[\w\d\.]+', ua.email):
+            bot.reply('Does not appear to be a valid email address: %s' % ua.email, channel, nick)
+            return
+
+        db_config = map(string.strip, self.config['environment_%s' % ua.environment].split(','))
+        dbci = DBConnectInfo(*db_config)
+
+        h_info = ssh_config.lookup(dbci.host)
         try:
             h = '%s@%s:%s' % (h_info['user'], h_info['hostname'], h_info['port'])
         except:
             bot.reply('Incomplete ssh config for environment', channel, nick)
             return
+        return (ua, dbci, h)
 
-        exists = check_if_user_exists(h, dbaddr, dbname, dbuser, dbpass, ua.username)
+    def handle_bpluser_exists(self, bot, args, channel, nick):
+        try:
+            conf = self._handle_bpluser_prelim(bot, args, channel, nick)
+        except InvalidArgs:
+            bot.reply('Usage: exists <environment> <username>', channel, nick)
+            return
+        except Exception, e:
+            logging.error('Unhandled exception %s' % e)
+            return
+
+        if not conf:
+            bot.reply('Could not complete command.')
+            return
+
+        (ua, dbci, h) = conf
+        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
         if exists is None:
             bot.reply('Error while running check', channel, nick)
         elif exists:
