@@ -34,6 +34,10 @@ class BPLUser(BotPlugin):
             self.config[k] = v
 
     def command_bpluser(self, bot, e, command, args, channel, nick):
+        if re.search('[\'\"]', args):
+            bot.reply('You may not use quotation marks in command arguments.', channel, nick)
+            return
+
         try:
             (subcmd, args) = args.split(' ', 1)
         except:
@@ -123,6 +127,46 @@ class BPLUser(BotPlugin):
         else:
             bot.reply('User %s does not exist in %s' % (ua.username, ua.environment), channel, nick)
 
+    def handle_bpluser_create(self, bot, args, channel, nick):
+        try:
+            conf = self._handle_bpluser_prelim(bot, args, channel, nick)
+        except InvalidArgs:
+            bot.reply('Usage: create <environment> <username> <email> <full_name>', channel, nick)
+            return
+        except Exception, e:
+            logging.error('Unhandled exception %s' % e)
+            return
+
+        if not conf:
+            bot.reply('Could not complete command.', channel, nick)
+
+        (ua, dbci, h) = conf
+        # UserAccount object may have been created with only environment
+        # and username populated.
+        if ua.email is None or ua.full_name is None:
+            bot.reply('Usage: create <environment> <username> <email> <full_name>', channel, nick)
+            return
+
+        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
+        if exists is None:
+            bot.reply('Error while running check', channel, nick)
+            return
+        elif exists:
+            bot.reply('User %s already exists in %s' % (ua.username, ua.environment), channel, nick)
+            return
+
+        create_user_in_environment(h, dbci, ua)
+
+        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
+        if exists is None:
+            bot.reply('Error while confirming user creation.', channel, nick)
+            return
+        elif exists:
+            bot.reply('User %s created in %s' % (ua.username, ua.environment), channel, nick)
+        else:
+            bot.reply('Could not create user %s in %s' % (ua.username, ua.environment), channel, nick)
+
+
 def create_sql_query_does_user_exist(dbname, username):
     sqlfile = 'does_user_exist_%s.sql' % username
     f = open(sqlfile, 'w')
@@ -147,9 +191,27 @@ def check_if_user_exists(host, dbaddr, dbname, dbuser, dbpass, user):
         except CheckFailed:
             return None
         if exists:
-            return 1
+            return True
         else:
-            return 0
+            return False
+
+def create_sql_query_create_user(dbci, ua):
+    sqlfile = 'create_user_%s.sql' % ua.username
+    f = open(sqlfile, 'w')
+    f.write("use %s;\nINSERT INTO users (username, email, full_name) VALUES ('%s', '%s', '%s');" % (dbci.dbname, ua.username, ua.email, ua.full_name))
+    f.close()
+    return sqlfile
+
+def create_user(dbci, ua):
+    sqlfile = create_sql_query_create_user(dbci, ua)
+    put(sqlfile, sqlfile)
+    result = run('mysql -h %s -u %s --password=%s < %s' % (dbci.dbaddr, dbci.dbuser, dbci.dbpass, sqlfile))
+    run('rm %s' % sqlfile)
+    local('rm %s' % sqlfile)
+
+def create_user_in_environment(host, dbci, ua):
+    with settings(host_string=host):
+        create_user(dbci, ua)
 
 def get_ssh_config(dotsshconfig):
     config = SSHConfig()
