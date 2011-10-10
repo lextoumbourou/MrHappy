@@ -131,7 +131,7 @@ class BPLUser(BotPlugin):
             return
 
         (ua, dbci, h) = conf
-        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
+        exists = check_if_user_exists(h, dbci, ua.username)
         if exists is None:
             bot.reply('Error while running check', channel, nick)
         elif exists:
@@ -159,7 +159,7 @@ class BPLUser(BotPlugin):
             bot.reply('Usage: create <environment> <username> <email> <full_name>', channel, nick)
             return
 
-        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
+        exists = check_if_user_exists(h, dbci, ua.username)
         if exists is None:
             bot.reply('Error while running check', channel, nick)
             return
@@ -169,7 +169,7 @@ class BPLUser(BotPlugin):
 
         create_user_in_environment(h, dbci, ua)
 
-        exists = check_if_user_exists(h, dbci.dbaddr, dbci.dbname, dbci.dbuser, dbci.dbpass, ua.username)
+        exists = check_if_user_exists(h, dbci, ua.username)
         if exists is None:
             bot.reply('Error while confirming user creation.', channel, nick)
             return
@@ -186,10 +186,10 @@ def create_sql_query_does_user_exist(dbname, username):
     f.close()
     return sqlfile
 
-def user_exists(dbaddr, dbname, dbuser, dbpass, user):
-    sqlfile = create_sql_query_does_user_exist(dbname, user)
+def user_exists(dbci, username):
+    sqlfile = create_sql_query_does_user_exist(dbci.dbname, username)
     put(sqlfile, sqlfile)
-    result = run('mysql -h %s -u %s --password=%s < %s' % (dbaddr, dbuser, dbpass, sqlfile))
+    result = run('mysql -h %s -u %s --password=%s < %s' % (dbci.dbaddr, dbci.dbuser, dbci.dbpass, sqlfile))
     run('rm %s' % sqlfile)
     local('rm %s' % sqlfile)
     m = re.search('user_count: (\d+)', result)
@@ -197,9 +197,9 @@ def user_exists(dbaddr, dbname, dbuser, dbpass, user):
         raise CheckFailed
     return int(m.groups()[0])
 
-def check_if_user_exists(host, dbaddr, dbname, dbuser, dbpass, user):
+def check_if_user_exists(host, dbci, username):
     with settings(host_string=host):
-        try: exists = user_exists(dbaddr, dbname, dbuser, dbpass, user)
+        try: exists = user_exists(dbci, username)
         except CheckFailed:
             return None
         if exists:
@@ -236,10 +236,11 @@ ssh_config = get_ssh_config('/home/%s/.ssh/config' % env['user'])
 
 if __name__ == '__main__':
     import sys
-    (_, host, dbaddr, dbname, dbuser, dbpass, username) = sys.argv
-    h_info = ssh_config.lookup(host)
+    dbci = DBConnectInfo(*sys.argv[1:6])
+    username = sys.argv[6]
+    h_info = ssh_config.lookup(dbci.host)
     h = '%s@%s:%s' % (h_info['user'], h_info['hostname'], h_info['port'])
-    exists = check_if_user_exists(h, dbaddr, dbname, dbuser, dbpass, username)
+    exists = check_if_user_exists(h, dbci, username)
     if exists is None:
         print 'failed to run check'
     elif exists:
