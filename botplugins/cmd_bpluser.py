@@ -46,6 +46,18 @@ class BPLUser(BotPlugin):
             self.handle_bpluser_exists(bot, args, channel, nick)
         if subcmd == "create":
             self.handle_bpluser_create(bot, args, channel, nick)
+        if subcmd == "help":
+            self.handle_bpluser_help(bot, args, channel, nick)
+
+    def handle_bpluser_help(self, bot, args, channel, nick):
+        response = [
+            'May check if user account exists in a BPL environment,',
+            'or create a user account in a BPL environment.',
+            'exists <environment> <username>',
+            'create <environment> <username> <email> <full_name>',
+        ]
+        for line in response:
+            bot.reply(line, channel, nick)
 
     def _user_account_from_args(self, args):
         """
