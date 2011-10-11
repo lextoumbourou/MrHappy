@@ -28,7 +28,7 @@ class BPLUser(BotPlugin):
         'environment_example': 'server,dbaddr,dbname,dbuser,dbpass',
     }
 
-    def setup(self, options):
+    def setup(self, bot, options):
         self.config = {}
         for k, v in options.items():
             self.config[k] = v
