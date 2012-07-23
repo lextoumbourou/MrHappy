@@ -5,9 +5,12 @@ import threading
 from BeautifulSoup import BeautifulSoup
 from datetime import datetime
 
-alert_icon = {'CRITICAL':':finnadie:',
-              'WARNING' :':rage3:',
-              'OK'      :':smiley:'}
+alert_icon = {'CRITICAL' :':scream:',
+              'WARNING'  :':cold_sweat:',
+              'OK'       :':smiley:',
+              'HOST DOWN':':finnadie:',
+              'HOST UP'  :':godmode:',
+              }
 
 class NagiosMonitor(BotPlugin):
     fetch_interval = 60
@@ -15,7 +18,8 @@ class NagiosMonitor(BotPlugin):
         self.bot = bot
         self.last_run = datetime.now()
         #self.last_run = to_datetime("2012-07-19 10:22:42")
-        self.notify_channel = 'testchan'
+        #self.notify_channel = 'testchan'
+        self.notify_channel = 'Bigpond Live'
 
         self.timer = threading.Timer(self.fetch_interval, self.notify_channel_of_events)
         self.timer.start()
@@ -37,11 +41,16 @@ class NagiosMonitor(BotPlugin):
             # last saved run time
             if event['time'] <= self.last_run:
                 continue
-            msg = "{0} {1} | {2} | {3} | {4}".format(alert_icon[event['level']],
-                                                      event['time'],
-                                                      event['service'],
-                                                      event['host'],
-                                                      event['info'])
+            try:
+                icon = alert_icon[event['level']]
+            except KeyError:
+                icon = ':alien:'
+
+            msg = "{0} {1} | {2} | {3} | {4}".format(icon,
+                                                     event['time'],
+                                                     event['service'],
+                                                     event['host'],
+                                                     event['info'])
             self.bot.say_public(self.notify_channel, msg)
 
         # It is so we have a new last_run time
@@ -58,14 +67,14 @@ class NagiosMonitor(BotPlugin):
 
 
 def open_page(nagios_url):
-    #h = httplib2.Http(".cache")
-    #h.add_credentials(secret.NAGIOS_USER, secret.NAGIOS_PASS)
-    #resp, content = h.request(nagios_url)
-    ## Only return content if we actually found something
-    #if resp['status'] == '200':
-    #    return content
-    #return None
-    return open("/tmp/index.html").read()
+    h = httplib2.Http(".cache")
+    h.add_credentials(secret.NAGIOS_USER, secret.NAGIOS_PASS)
+    resp, content = h.request(nagios_url)
+    # Only return content if we actually found something
+    if resp['status'] == '200':
+        return content
+    return None
+    #return open("/tmp/index.html").read()
 
 def get_latest_events(html):
     """
@@ -86,16 +95,17 @@ def get_latest_events(html):
         level = td[2].text
         time = td[3].text
         info = td[6].text
+
+        # Ignore bpl_pager notifications
+        contact = td[4].text
+        if contact == 'bpl_pager':
+            continue
         output.append({'host'   : host,
                        'service': service,
                        'level'  : level,
                        'time'   : to_datetime(time),
                        'info'   : info})
     return output
-
-def get_last_check():
-    return datetime.now()
-    #return to_datetime("2012-07-18 15:22:06")
 
 def to_datetime(time_string):
     format_string = "%Y-%m-%d %H:%M:%S"
